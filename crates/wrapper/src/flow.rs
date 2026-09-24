@@ -27,20 +27,18 @@ pub async fn pull(hash: &str, output: &Path, cfg: &WrapperConfig) -> anyhow::Res
 
     let mut session = Session::open(&cfg.data_dir, &hash)?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    let has_live_capability = match session.capability()? {
-        Some(grant) if grant.expiry > now.saturating_add(EXPIRY_MARGIN_SECS) => true,
-        Some(_) => {
-            // A key's cap and expiry are frozen on-chain at its first
-            // redemption, so an expired capability means a fresh key.
-            session.discard()?;
-            session = Session::open(&cfg.data_dir, &hash)?;
-            false
-        }
-        None => false,
-    };
+    if session
+        .capability()?
+        .is_some_and(|grant| grant.expiry <= now.saturating_add(EXPIRY_MARGIN_SECS))
+    {
+        // A key's cap and expiry are frozen on-chain at its first
+        // redemption, so an expired capability means a fresh key.
+        session.discard()?;
+        session = Session::open(&cfg.data_dir, &hash)?;
+    }
 
     let client = session.ensure_key()?;
-    if !has_live_capability {
+    if session.capability()?.is_none() {
         let info = match api.get_capability(client).await? {
             Some(info) => info,
             None => {

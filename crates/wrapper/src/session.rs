@@ -81,7 +81,9 @@ impl Session {
     }
 
     /// Return this download's key address, generating the key (and its
-    /// random password) on first use.
+    /// random password) on first use. A key whose password file is missing
+    /// cannot sign, so it is replaced, together with the capability bound to
+    /// it, instead of being handed to `decdn` to fail on.
     ///
     /// # Errors
     ///
@@ -89,7 +91,11 @@ impl Session {
     pub fn ensure_key(&self) -> anyhow::Result<Address> {
         let keystore = self.keystore_path();
         if keystore.exists() {
-            return crate::keystore::read_address(&keystore);
+            if self.password_path().is_file() {
+                return crate::keystore::read_address(&keystore);
+            }
+            remove_if_present(&keystore)?;
+            remove_if_present(&self.capability_path())?;
         }
         let mut secret = [0u8; 32];
         getrandom::fill(&mut secret).map_err(|e| anyhow::anyhow!("read OS randomness: {e}"))?;
@@ -99,12 +105,13 @@ impl Session {
             .context("generate throwaway download key")
     }
 
-    /// The capability saved for this download, if any. An unreadable or
-    /// malformed file reads as `None`, so the caller requests a fresh one.
+    /// The capability saved for this download, if any. A file whose contents
+    /// are not a `dcap1:` token reads as `None`, so the caller requests a
+    /// fresh one.
     ///
     /// # Errors
     ///
-    /// Returns an error only if the file exists but cannot be read.
+    /// Returns an error if the file exists but cannot be read.
     pub fn capability(&self) -> anyhow::Result<Option<CapabilityGrant>> {
         let path = self.capability_path();
         if !path.exists() {
@@ -135,8 +142,20 @@ impl Session {
     }
 }
 
+/// Create `dir` (and missing parents) as mode `0700` from the start, so the
+/// directory holding key material is never briefly world-readable. An
+/// existing `dir` is tightened to `0700` as well.
 fn create_private_dir(dir: &Path) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(dir)
+        .with_context(|| format!("create {}", dir.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -144,6 +163,15 @@ fn create_private_dir(dir: &Path) -> anyhow::Result<()> {
             .with_context(|| format!("chmod 0700 {}", dir.display()))?;
     }
     Ok(())
+}
+
+fn remove_if_present(path: &Path) -> anyhow::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(e).with_context(|| format!("remove {}", path.display()))
+        }
+        _ => Ok(()),
+    }
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
@@ -194,6 +222,32 @@ mod tests {
         assert_eq!(first, again);
         let pw = std::fs::read_to_string(session.password_path()).unwrap();
         assert_eq!(pw.len(), 64);
+    }
+
+    #[test]
+    fn key_without_password_is_replaced_with_its_capability() {
+        let root = tempfile::tempdir().unwrap();
+        let session = Session::open(root.path(), HEX).unwrap();
+        let first = session.ensure_key().unwrap();
+        session.save_capability("dcap1:bound-to-first").unwrap();
+        std::fs::remove_file(session.password_path()).unwrap();
+
+        let second = session.ensure_key().unwrap();
+        assert_ne!(first, second);
+        assert!(session.password_path().is_file());
+        assert!(!session.capability_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn state_dirs_are_created_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let session = Session::open(root.path(), HEX).unwrap();
+        for dir in [session.dir(), root.path().join("downloads").as_path()] {
+            let mode = std::fs::metadata(dir).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{}", dir.display());
+        }
     }
 
     #[test]
