@@ -113,7 +113,6 @@ impl WrapperConfig {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     const SAMPLE: &str = r#"
         gateway_base = "https://gateway.example.com"
@@ -125,24 +124,19 @@ mod tests {
         chain_id = 421614
     "#;
 
+    /// Compared against the platform's own home directory (`$HOME` on Unix,
+    /// the profile folder on Windows) rather than a faked `HOME`, which
+    /// Windows does not consult.
     #[test]
-    #[serial]
     fn parses_profile_and_expands_home() {
-        unsafe {
-            std::env::set_var("HOME", "/home/testuser");
-        }
         let cfg = WrapperConfig::from_toml_str(SAMPLE).unwrap();
         assert_eq!(cfg.gateway_base, "https://gateway.example.com");
-        assert_eq!(
-            cfg.data_dir,
-            PathBuf::from("/home/testuser/.decdn/sponsored")
-        );
+        assert_eq!(cfg.data_dir, home().unwrap().join(".decdn/sponsored"));
         assert_eq!(cfg.chain_id, 421_614);
         assert!(cfg.slash_judge.is_none());
     }
 
     #[test]
-    #[serial]
     fn ignores_unknown_fields() {
         let with_extra = format!("{SAMPLE}\nkeystore_path = \"~/.decdn/client/keystore.json\"\n");
         assert!(WrapperConfig::from_toml_str(&with_extra).is_ok());
