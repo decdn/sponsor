@@ -75,7 +75,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.95
         with:
           components: clippy
-          targets: ${{ matrix.target }}
+      # From inside the checkout, so the target lands on the toolchain that
+      # `rust-toolchain.toml` pins rather than on the action's own.
+      - working-directory: sponsord
+        run: rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sponsord
