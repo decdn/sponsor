@@ -83,9 +83,9 @@ pool up from the treasury whenever its remaining balance falls below
 | `SPONSOR_TURNSTILE_SECRET` | **yes** | — | Cloudflare Turnstile server-side secret, used to verify captcha tokens |
 | `SPONSOR_TURNSTILE_SITEKEY` | **yes** | — | Cloudflare Turnstile sitekey, interpolated into the `/fund` widget page |
 | `SPONSOR_DATA_DIR` | no | `./data` | Directory for the redb store (issuance bookkeeping) |
-| `SPONSOR_DECDN_RELEASE` | **yes** | — | `decdn/decdn` release tag (`vMAJOR.MINOR.PATCH`) the installers install `decdn` from |
+| `SPONSOR_DECDN_RELEASE` | **yes** | — | `decdn/decdn` release tag (`vMAJOR.MINOR.PATCH`, optionally `-pre`, e.g. `v1.0.0-rc.1`) the installers install `decdn` from |
 | `SPONSOR_DECDN_SUMS_SHA256` | **yes** | — | SHA-256 of that release's `SHA256SUMS` file |
-| `SPONSOR_WRAPPER_RELEASE` | **yes** | — | `decdn/sponsord` release tag the installers install `decdn-sponsored` from |
+| `SPONSOR_WRAPPER_RELEASE` | **yes** | — | `decdn/sponsord` release tag (same shape) the installers install `decdn-sponsored` from |
 | `SPONSOR_WRAPPER_SUMS_SHA256` | **yes** | — | SHA-256 of that release's `SHA256SUMS` file (printed in the release notes) |
 
 ## The `decdn-sponsored` flow
@@ -152,7 +152,7 @@ tag always builds the same code.
 1. Point `decdn.ref` at the `decdn` commit (full SHA) or tag to build
    against, and make sure `Cargo.lock` is consistent with it
    (`cargo metadata --locked` with that commit checked out beside this repo).
-2. Push a `vMAJOR.MINOR.PATCH` tag. `.github/workflows/release.yml`
+2. Push a `vMAJOR.MINOR.PATCH[-pre]` tag. `.github/workflows/release.yml`
    builds `decdn-sponsored` for Linux, macOS and Windows (x86_64 and
    aarch64 each) and `sponsord` for Linux, and publishes them with a
    `SHA256SUMS` manifest as a GitHub Release.
